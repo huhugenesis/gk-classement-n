@@ -615,8 +615,12 @@ function buildVoter(pseudo){
   const notes=Object.entries(v.votes).map(([nm,n])=>({nm,n,g:BYNAME[nm]}))
     .filter(x=>x.g).sort((a,b)=>b.n-a.n||b.g.avgExact-a.g.avgExact);
   const withGap=notes.filter(x=>x.g.votes>0).map(x=>({...x,gap:x.n*10-x.g.exact}));
-  const love=[...withGap].sort((a,b)=>b.gap-a.gap)[0];
-  const hate=[...withGap].sort((a,b)=>a.gap-b.gap)[0];
+  const sortedGap=[...withGap].sort((a,b)=>b.gap-a.gap);
+  // "au-dessus" : le plus fort écart positif ; "en dessous" : le plus fort écart négatif.
+  // Un même jeu ne peut pas occuper les deux cases, et une case reste vide si aucun cas ne correspond.
+  const love=sortedGap.find(x=>x.gap>0.05)||null;
+  const hate=[...sortedGap].reverse().find(x=>x.gap<-0.05)||null;
+  const sameGame=love&&hate&&love.nm===hate.nm;
   const aff=affinities(v);
   const twin=aff[0], opp=aff[aff.length-1];
   const tr=trophiesOf(pseudo);
@@ -633,16 +637,16 @@ function buildVoter(pseudo){
 
   if(tr.length) html+='<div style="margin:14px 0 2px">'+tr.map(t=>'<span class="badge" style="background:var(--bg4);color:var(--text)">'+t.emoji+' '+esc(t.label)+'</span>').join('')+'</div>';
 
-  html+='<div class="split" style="margin-top:20px">';
-  if(love) html+='<div><h2 class="sec" style="margin:0 0 8px">Noté bien au-dessus de la communauté</h2>'+
+  const gapStr=g=>(g>0?'+':'')+fr(g,0);  // fr gère déjà le signe négatif
+  const cardAbove = love ? ('<div><h2 class="sec" style="margin:0 0 8px">Noté bien au-dessus de la communauté</h2>'+
     '<div class="card" onclick="openGame('+JSON.stringify(love.nm).replace(/"/g,'&quot;')+')"><b>'+esc(love.nm)+'</b>'+
     '<div class="mini">sa note <span style="color:'+colorOf(love.n*10)+'">'+love.n*10+'</span> · communauté '+fr(love.g.exact)+
-    ' <span style="color:#22c55e">(+'+fr(love.gap,0)+')</span></div></div></div>';
-  if(hate) html+='<div><h2 class="sec" style="margin:0 0 8px">Noté bien en dessous de la communauté</h2>'+
+    ' <span style="color:#22c55e">('+gapStr(love.gap)+')</span></div></div></div>') : '';
+  const cardBelow = (hate && !sameGame) ? ('<div><h2 class="sec" style="margin:0 0 8px">Noté bien en dessous de la communauté</h2>'+
     '<div class="card" onclick="openGame('+JSON.stringify(hate.nm).replace(/"/g,'&quot;')+')"><b>'+esc(hate.nm)+'</b>'+
     '<div class="mini">sa note <span style="color:'+colorOf(hate.n*10)+'">'+hate.n*10+'</span> · communauté '+fr(hate.g.exact)+
-    ' <span style="color:#ef4444">('+fr(hate.gap,0)+')</span></div></div></div>';
-  html+='</div>';
+    ' <span style="color:#ef4444">('+gapStr(hate.gap)+')</span></div></div></div>') : '';
+  if(cardAbove||cardBelow) html+='<div class="split" style="margin-top:20px">'+cardAbove+cardBelow+'</div>';
 
   if(aff.length){
     html+='<div class="split" style="margin-top:8px">';
