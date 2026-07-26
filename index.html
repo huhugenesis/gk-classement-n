@@ -386,18 +386,19 @@ const VOTERS = Object.keys(DATA.votes).map(p=>{
   const v = (entry && entry.v) ? entry.v : entry;
   const avatar = (entry && entry.av) ? entry.av : null;
   const names = Object.keys(v);
-  let sum=0, n10=0, n1=0, dSum=0, dN=0;
+  let sum=0, n10=0, n1=0, dSum=0, dAbs=0, dN=0;
   names.forEach(nm=>{
     const note=v[nm]; sum+=note;
     if(note===10)n10++; if(note===1)n1++;
     const g=BYNAME[nm];
-    if(g&&g.votes){ dSum += note*10-g.exact; dN++; }
+    if(g&&g.votes){ const d=note*10-g.exact; dSum+=d; dAbs+=Math.abs(d); dN++; }
   });
   return {
     pseudo:p, votes:v, avatar:avatar, count:names.length,
     avg: names.length ? sum/names.length : 0,
     n10, n1,
-    gap: dN ? dSum/dN : 0
+    gap: dN ? dSum/dN : 0,      // écart SIGNÉ moyen (pour les encarts au-dessus / en dessous)
+    gapAbs: dN ? dAbs/dN : 0    // écart ABSOLU moyen (pour consensus / franc-tireur)
   };
 }).filter(v=>v.count>0);
 const BYPSEUDO={}; VOTERS.forEach(v=>BYPSEUDO[v.pseudo]=v);
@@ -638,6 +639,10 @@ function buildVoter(pseudo){
     '</div></div>';
 
   if(tr.length) html+='<div style="margin:14px 0 2px">'+tr.map(t=>'<span class="badge" style="background:var(--bg4);color:var(--text)">'+t.emoji+' '+esc(t.label)+'</span>').join('')+'</div>';
+  const fanOf=[...new Set(GAMES.map(g=>g.serie).filter(Boolean))].filter(s=>{ const f=biggestFan(s); return f&&f.us.indexOf(pseudo)>=0; });
+  if(fanOf.length){
+    html+='<div style="margin:6px 0 2px">'+fanOf.map(s=>'<span class="badge" style="background:var(--bg4);color:var(--text);cursor:pointer" onclick="openSerie('+JSON.stringify(s).replace(/"/g,'&quot;')+')">🏅 Plus grand fan de '+esc(s)+'</span>').join(' ')+'</div>';
+  }
 
   const gapStr=g=>(g>0?'+':'')+fr(g,0);  // fr gère déjà le signe négatif
   const cardAbove = love ? ('<div><h2 class="sec" style="margin:0 0 8px">Noté bien au-dessus de la communauté</h2>'+
@@ -724,36 +729,70 @@ function renderBest(){
       if(tieByVotes){ const d=b.count-a.count; if(d!==0) return d; }
       return 0;
     });
-    // Le(s) gagnant(s) : tous ceux à égalité stricte avec le premier sur le critère (+ votes si départage)
     const top=sorted[0];
     const winners=sorted.filter(x=>{
       if(pick(top,x)!==0) return false;
       if(tieByVotes && x.count!==top.count) return false;
       return true;
     });
-    TROPHIES.push({emoji,label,desc,winners:winners.map(w=>w.pseudo),detail:fmt(top)});
+    // Podium : 3 premiers rangs distincts (les ex æquo du 1er partagent le rang 1)
+    const podium=sorted.slice(0,6).map(p=>({pseudo:p.pseudo,detail:fmt(p),val:pick(top,p)===0&&(!tieByVotes||p.count===top.count)}));
+    TROPHIES.push({emoji,label,desc,winners:winners.map(w=>w.pseudo),detail:fmt(top),podium:podium.slice(0,3)});
   };
   award('🌟','L\'optimiste','La moyenne la plus haute',(a,b)=>b.avg-a.avg,w=>fr(w.avg*10)+' de moyenne',true);
   award('⚖️','Le critique','La moyenne la plus basse',(a,b)=>a.avg-b.avg,w=>fr(w.avg*10)+' de moyenne',true);
   award('🎮','Le marathonien','Le plus grand nombre de jeux notés',(a,b)=>b.count-a.count,w=>w.count+' jeux notés',false);
   award('📚','L\'école des fans','Le plus grand nombre de 10/10',(a,b)=>b.n10-a.n10,w=>w.n10+' fois la note maximale',true);
   award('😤','Le grincheux','Le plus grand nombre de 1/10',(a,b)=>b.n1-a.n1,w=>w.n1+' fois la note minimale',true);
-  award('🦄','Le franc-tireur','L\'écart le plus fort avec la communauté',(a,b)=>Math.abs(b.gap)-Math.abs(a.gap),w=>fr(Math.abs(w.gap))+' points d\'écart moyen',true);
-  award('🎯','Le consensus','L\'écart le plus faible avec la communauté',(a,b)=>Math.abs(a.gap)-Math.abs(b.gap),w=>fr(Math.abs(w.gap))+' point d\'écart moyen',true);
+  award('🦄','Le franc-tireur','L\'écart le plus fort avec la communauté',(a,b)=>b.gapAbs-a.gapAbs,w=>fr(w.gapAbs)+' points d\'écart moyen',true);
+  award('🎯','Le consensus','L\'écart le plus faible avec la communauté',(a,b)=>a.gapAbs-b.gapAbs,w=>fr(w.gapAbs)+' point d\'écart moyen',true);
   const tn=$('#troph-note'); if(tn) tn.textContent='Attribués parmi les votants ayant noté au moins '+TROPHY_MIN+' jeux.';
   $('#troph-out').innerHTML=TROPHIES.map(t=>{
     const ws=t.winners||[];
     const many=ws.length>1;
-    const namesHtml=ws.map(w=>'<span class="troph-win" data-w="'+esc(w)+'">'+esc(w)+'</span>').join(', ');
+    const winnersHtml=ws.map(w=>'<span class="troph-win" data-w="'+esc(w)+'">'+esc(w)+'</span>').join(', ');
+    // Podium : le rang 1 = gagnant(s) ; on complète avec les suivants (hors gagnants) jusqu'à 3 lignes.
+    const runners=(t.podium||[]).filter(p=>ws.indexOf(p.pseudo)<0).slice(0, Math.max(0, 3-1));
+    const runnerRows=runners.map((p,idx)=>
+      '<div class="mini" style="opacity:.72">'+['','🥈','🥉'][idx+1]+' <span class="troph-win" data-w="'+esc(p.pseudo)+'">'+esc(p.pseudo)+'</span> — '+esc(p.detail)+'</div>'
+    ).join('');
     return '<div class="card">'+
       '<div style="font-size:22px;line-height:1">'+t.emoji+(many?' <span style="font-size:12px;color:var(--text3);vertical-align:middle">ex æquo ×'+ws.length+'</span>':'')+'</div>'+
       '<b style="margin-top:6px">'+esc(t.label)+'</b>'+
       '<div class="sub">'+esc(t.desc)+'</div>'+
-      '<div class="mini" style="color:var(--accent);font-weight:700">'+namesHtml+'</div>'+
-      '<div class="sub">'+esc(t.detail)+'</div></div>';
+      '<div class="mini" style="color:var(--accent);font-weight:700">🥇 '+winnersHtml+'</div>'+
+      '<div class="sub" style="margin-bottom:4px">'+esc(t.detail)+'</div>'+
+      runnerRows+'</div>';
   }).join('');
   document.querySelectorAll('.troph-win').forEach(el=>el.onclick=()=>openVoter(el.dataset.w));
 }
+function biggestFan(nm){
+  // Plus grand fan : parmi ceux qui ont noté au moins la moitié de la série (min 2 jeux)
+  // et avec une moyenne d'au moins 6/10 dessus, la plus haute moyenne l'emporte,
+  // départage par nombre de jeux notés. En cas d'égalité stricte (même moyenne ET
+  // même nombre de jeux), tous les ex æquo sont renvoyés.
+  const serieGames=GAMES.filter(g=>g.serie===nm);
+  if(serieGames.length<2) return null;
+  const need=Math.max(2,Math.ceil(serieGames.length/2));
+  const names=new Set(serieGames.map(g=>g.name));
+  const cands=[];
+  Object.keys(DATA.votes).forEach(u=>{
+    const entry=DATA.votes[u];
+    const v=(entry&&entry.v)?entry.v:entry;
+    let sum=0,cnt=0;
+    names.forEach(n=>{ if(v[n]!==undefined){ sum+=v[n]; cnt++; } });
+    if(cnt<need) return;
+    const moy=sum/cnt;
+    if(moy<6) return;
+    cands.push({u:u,moy:moy,cnt:cnt});
+  });
+  if(!cands.length) return null;
+  cands.sort((a,b)=>b.moy-a.moy||b.cnt-a.cnt);
+  const top=cands[0];
+  const winners=cands.filter(c=>c.moy===top.moy && c.cnt===top.cnt);
+  return {us:winners.map(w=>w.u), moy:top.moy, cnt:top.cnt};
+}
+
 function buildSerie(nm){
   const gs=GAMES.filter(g=>g.serie===nm).sort((a,b)=>b.avgExact-a.avgExact);
   const tv=gs.reduce((a,g)=>a+g.votes,0);
@@ -761,6 +800,15 @@ function buildSerie(nm){
   let html='<div class="phead"><div class="ph">📚</div><div><h3>'+esc(nm)+'</h3>'+
     '<div class="kv">'+gs.length+' jeux · '+tv+' votes</div>'+
     '<div class="pscore" style="color:'+colorOf(av*10)+'">'+fr(av*10)+' <small>/100 pondéré</small></div></div></div>';
+  const fan=biggestFan(nm);
+  if(fan){
+    const names=fan.us.map(u=>'<span class="troph-win" data-w="'+esc(u)+'">'+esc(u)+'</span>').join(', ');
+    const titre=fan.us.length>1?('🏅 Plus grands fans de la série (ex æquo ×'+fan.us.length+')'):'🏅 Plus grand fan de la série';
+    html+='<div class="card" style="margin-top:16px">'+
+      '<div class="sub">'+titre+'</div>'+
+      '<b style="color:var(--accent)">'+names+'</b>'+
+      '<div class="mini">'+fr(fan.moy*10)+' de moyenne sur '+fan.cnt+' jeu'+(fan.cnt>1?'x':'')+' de la série</div></div>';
+  }
   html+='<div class="tiles" style="margin-top:18px">'+gs.map(g=>tileHTML(g,g.votes+'v')).join('')+'</div>';
   return html;
 }
@@ -784,6 +832,8 @@ function paintPanel(restore){
   const html = e.t==='g' ? buildGame(e.id) : e.t==='v' ? buildVoter(e.id) : buildSerie(e.id);
   if(html===null){ STACK.pop(); if(!STACK.length) closePanel(); return; }
   $('#panel-body').innerHTML=html;
+  // clic sur un pseudo (.troph-win) où qu'il soit dans le panneau -> ouvre la fiche votant
+  $('#panel-body').querySelectorAll('.troph-win').forEach(el=>el.onclick=(ev)=>{ ev.stopPropagation(); openVoter(el.dataset.w); });
   $('#ov').classList.add('on');
   $('#panel').classList.toggle('hasback', STACK.length>1);
   $('#p-back').style.display = STACK.length>1 ? 'block' : 'none';
