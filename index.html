@@ -164,6 +164,8 @@ select,input.txt{background:var(--bg2);border:1px solid var(--line2);color:var(-
 .kv{font-size:13px;color:var(--text2)}
 .split{display:grid;grid-template-columns:1fr 1fr;gap:18px}
 @media(max-width:560px){.split{grid-template-columns:1fr}}
+.troph-win{cursor:pointer}
+.troph-win:hover{text-decoration:underline}
 .badge{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;background:var(--bg4);color:var(--text2);margin-right:5px}
 
 /* ---------- Data page ---------- */
@@ -266,6 +268,7 @@ footer{border-top:1px solid var(--line);margin-top:50px;padding-top:18px;font-si
   <div class="grid" id="series-out"></div>
 
   <h2 class="sec">Les trophées des votants</h2>
+  <p class="lead" id="troph-note"></p>
   <div class="grid" id="troph-out"></div>
 </section>
 
@@ -607,8 +610,7 @@ function affinities(v){
   return res;
 }
 function trophiesOf(pseudo){
-  const t=TROPHIES.filter(x=>x.winner===pseudo);
-  return t;
+  return TROPHIES.filter(x=>(x.winners||[]).indexOf(pseudo)>=0);
 }
 function buildVoter(pseudo){
   const v=BYPSEUDO[pseudo]; if(!v) return null;
@@ -705,28 +707,52 @@ function renderBest(){
     '<div class="mini" style="color:'+colorOf(s.score)+';font-size:19px;font-weight:700">'+s.score+'</div></div>').join('')
     ||'<p class="muted">Aucune série de 2 jeux ou plus.</p>';
 
-  /* Trophées */
+  /* Trophées — seuil adaptatif : au moins la moitié de la médiane de participation,
+     avec un plancher de 10 jeux, pour qu'un votant à 3 votes ne rafle pas un trophée. */
   TROPHIES=[];
-  const elg=VOTERS.filter(v=>v.count>=3);
-  const award=(emoji,label,desc,pick,fmt)=>{
+  const counts=VOTERS.map(v=>v.count).sort((a,b)=>a-b);
+  const medCount=counts.length?counts[Math.floor(counts.length/2)]:0;
+  const TROPHY_MIN=Math.max(10,Math.round(medCount/2));
+  const elg=VOTERS.filter(v=>v.count>=TROPHY_MIN);
+  // pick : comparateur du critère principal. tieByVotes : départage par nb de votes si le critère est à égalité.
+  // Si l'égalité subsiste (même critère et, le cas échéant, même nb de votes), le trophée est partagé.
+  const award=(emoji,label,desc,pick,fmt,tieByVotes)=>{
     if(!elg.length) return;
-    const w=[...elg].sort(pick)[0];
-    TROPHIES.push({emoji,label,desc,winner:w.pseudo,detail:fmt(w)});
+    const sorted=[...elg].sort((a,b)=>{
+      const p=pick(a,b);
+      if(p!==0) return p;
+      if(tieByVotes){ const d=b.count-a.count; if(d!==0) return d; }
+      return 0;
+    });
+    // Le(s) gagnant(s) : tous ceux à égalité stricte avec le premier sur le critère (+ votes si départage)
+    const top=sorted[0];
+    const winners=sorted.filter(x=>{
+      if(pick(top,x)!==0) return false;
+      if(tieByVotes && x.count!==top.count) return false;
+      return true;
+    });
+    TROPHIES.push({emoji,label,desc,winners:winners.map(w=>w.pseudo),detail:fmt(top)});
   };
-  award('🌟','L\'optimiste','La moyenne la plus haute',(a,b)=>b.avg-a.avg,w=>fr(w.avg*10)+' de moyenne');
-  award('⚖️','Le critique','La moyenne la plus basse',(a,b)=>a.avg-b.avg,w=>fr(w.avg*10)+' de moyenne');
-  award('🎮','Le marathonien','Le plus grand nombre de jeux notés',(a,b)=>b.count-a.count,w=>w.count+' jeux notés');
-  award('📚','L\'école des fans','Le plus grand nombre de 10/10',(a,b)=>b.n10-a.n10,w=>w.n10+' fois la note maximale');
-  award('😤','Le grincheux','Le plus grand nombre de 1/10',(a,b)=>b.n1-a.n1,w=>w.n1+' fois la note minimale');
-  award('🦄','Le franc-tireur','L\'écart le plus fort avec la communauté',(a,b)=>Math.abs(b.gap)-Math.abs(a.gap),w=>fr(Math.abs(w.gap))+' points d\'écart moyen');
-  award('🎯','Le consensus','L\'écart le plus faible avec la communauté',(a,b)=>Math.abs(a.gap)-Math.abs(b.gap),w=>fr(Math.abs(w.gap))+' point d\'écart moyen');
-  $('#troph-out').innerHTML=TROPHIES.map(t=>
-    '<div class="card" onclick="openVoter('+JSON.stringify(t.winner).replace(/"/g,'&quot;')+')">'+
-    '<div style="font-size:22px;line-height:1">'+t.emoji+'</div>'+
-    '<b style="margin-top:6px">'+esc(t.label)+'</b>'+
-    '<div class="sub">'+esc(t.desc)+'</div>'+
-    '<div class="mini" style="color:var(--accent);font-weight:700">'+esc(t.winner)+'</div>'+
-    '<div class="sub">'+esc(t.detail)+'</div></div>').join('');
+  award('🌟','L\'optimiste','La moyenne la plus haute',(a,b)=>b.avg-a.avg,w=>fr(w.avg*10)+' de moyenne',true);
+  award('⚖️','Le critique','La moyenne la plus basse',(a,b)=>a.avg-b.avg,w=>fr(w.avg*10)+' de moyenne',true);
+  award('🎮','Le marathonien','Le plus grand nombre de jeux notés',(a,b)=>b.count-a.count,w=>w.count+' jeux notés',false);
+  award('📚','L\'école des fans','Le plus grand nombre de 10/10',(a,b)=>b.n10-a.n10,w=>w.n10+' fois la note maximale',true);
+  award('😤','Le grincheux','Le plus grand nombre de 1/10',(a,b)=>b.n1-a.n1,w=>w.n1+' fois la note minimale',true);
+  award('🦄','Le franc-tireur','L\'écart le plus fort avec la communauté',(a,b)=>Math.abs(b.gap)-Math.abs(a.gap),w=>fr(Math.abs(w.gap))+' points d\'écart moyen',true);
+  award('🎯','Le consensus','L\'écart le plus faible avec la communauté',(a,b)=>Math.abs(a.gap)-Math.abs(b.gap),w=>fr(Math.abs(w.gap))+' point d\'écart moyen',true);
+  const tn=$('#troph-note'); if(tn) tn.textContent='Attribués parmi les votants ayant noté au moins '+TROPHY_MIN+' jeux.';
+  $('#troph-out').innerHTML=TROPHIES.map(t=>{
+    const ws=t.winners||[];
+    const many=ws.length>1;
+    const namesHtml=ws.map(w=>'<span class="troph-win" data-w="'+esc(w)+'">'+esc(w)+'</span>').join(', ');
+    return '<div class="card">'+
+      '<div style="font-size:22px;line-height:1">'+t.emoji+(many?' <span style="font-size:12px;color:var(--text3);vertical-align:middle">ex æquo ×'+ws.length+'</span>':'')+'</div>'+
+      '<b style="margin-top:6px">'+esc(t.label)+'</b>'+
+      '<div class="sub">'+esc(t.desc)+'</div>'+
+      '<div class="mini" style="color:var(--accent);font-weight:700">'+namesHtml+'</div>'+
+      '<div class="sub">'+esc(t.detail)+'</div></div>';
+  }).join('');
+  document.querySelectorAll('.troph-win').forEach(el=>el.onclick=()=>openVoter(el.dataset.w));
 }
 function buildSerie(nm){
   const gs=GAMES.filter(g=>g.serie===nm).sort((a,b)=>b.avgExact-a.avgExact);
