@@ -189,7 +189,8 @@ footer{border-top:1px solid var(--line);margin-top:50px;padding-top:18px;font-si
     <div class="brand">Classement GK <em>· archive</em></div>
     <nav class="tabs">
       <button class="tab on" data-p="home">Bilan</button>
-      <button class="tab" data-p="rank">Classement</button>
+      <button class="tab" data-p="rank">Classement jeux</button>
+      <button class="tab" data-p="series">Classement séries</button>
       <button class="tab" data-p="voters">Votants</button>
       <button class="tab" data-p="best">Palmarès</button>
       <button class="tab" data-p="images">Exports visuels</button>
@@ -234,6 +235,16 @@ footer{border-top:1px solid var(--line);margin-top:50px;padding-top:18px;font-si
 </section>
 
 <!-- ============ VOTANTS ============ -->
+<!-- ============ CLASSEMENT SÉRIES ============ -->
+<section class="page" id="p-series">
+  <h2 class="sec" style="margin-top:4px">Classement des séries</h2>
+  <p class="lead">Moyenne pondérée par le nombre de votes, séries de 2 jeux minimum. Cliquez une série pour voir le détail et son plus grand fan.</p>
+  <div class="controls">
+    <input class="txt" id="f-serie-name" placeholder="Filtrer une série…" style="min-width:200px">
+  </div>
+  <div class="grid" id="series-out"></div>
+</section>
+
 <section class="page" id="p-voters">
   <h2 class="sec" style="margin-top:4px">Les votants</h2>
   <div class="controls">
@@ -262,10 +273,6 @@ footer{border-top:1px solid var(--line);margin-top:50px;padding-top:18px;font-si
   <h2 class="sec">Les incompris</h2>
   <p class="lead">Note globale basse, mais une minorité de fans convaincus.</p>
   <div class="tiles" id="ex-inc"></div>
-
-  <h2 class="sec">Classement des séries</h2>
-  <p class="lead">Moyenne pondérée par le nombre de votes, séries de 2 jeux minimum.</p>
-  <div class="grid" id="series-out"></div>
 
   <h2 class="sec">Les trophées des votants</h2>
   <p class="lead" id="troph-note"></p>
@@ -698,20 +705,6 @@ function renderBest(){
   $('#ex-pep').innerHTML =pep.map(g=>tileHTML(g,g.votes+'v')).join('')||'<p class="muted">Aucune pépite cette fois.</p>';
   $('#ex-inc').innerHTML =inc.map(g=>tileHTML(g,Math.round(g.fanPct*100)+'%')).join('')||'<p class="muted">Aucun incompris cette fois.</p>';
 
-  /* Séries */
-  const bys={};
-  GAMES.forEach(g=>{ if(!g.serie) return; (bys[g.serie]=bys[g.serie]||[]).push(g); });
-  const series=Object.entries(bys).filter(([,gs])=>gs.length>=2).map(([nm,gs])=>{
-    const tv=gs.reduce((a,g)=>a+g.votes,0);
-    const av=tv?gs.reduce((a,g)=>a+g.avgExact*g.votes,0)/tv:0;
-    return {nm,gs,tv,score:Math.round(av*10)};
-  }).sort((a,b)=>b.score-a.score);
-  $('#series-out').innerHTML=series.map(s=>
-    '<div class="card" onclick="openSerie('+JSON.stringify(s.nm).replace(/"/g,'&quot;')+')">'+
-    '<b>'+esc(s.nm)+'</b><div class="sub">'+s.gs.length+' jeux · '+s.tv+' votes</div>'+
-    '<div class="mini" style="color:'+colorOf(s.score)+';font-size:19px;font-weight:700">'+s.score+'</div></div>').join('')
-    ||'<p class="muted">Aucune série de 2 jeux ou plus.</p>';
-
   /* Trophées — seuil adaptatif : au moins la moitié de la médiane de participation,
      avec un plancher de 10 jeux, pour qu'un votant à 3 votes ne rafle pas un trophée. */
   TROPHIES=[];
@@ -766,6 +759,26 @@ function renderBest(){
   }).join('');
   document.querySelectorAll('.troph-win').forEach(el=>el.onclick=()=>openVoter(el.dataset.w));
 }
+let ALL_SERIES=[];
+function renderSeries(){
+  if(!ALL_SERIES.length){
+    const bys={};
+    GAMES.forEach(g=>{ if(!g.serie) return; (bys[g.serie]=bys[g.serie]||[]).push(g); });
+    ALL_SERIES=Object.entries(bys).filter(([,gs])=>gs.length>=2).map(([nm,gs])=>{
+      const tv=gs.reduce((a,g)=>a+g.votes,0);
+      const av=tv?gs.reduce((a,g)=>a+g.avgExact*g.votes,0)/tv:0;
+      return {nm,gs,tv,score:Math.round(av*10)};
+    }).sort((a,b)=>b.score-a.score);
+  }
+  const q=($('#f-serie-name')?$('#f-serie-name').value.trim().toLowerCase():'');
+  const list=q?ALL_SERIES.filter(s=>s.nm.toLowerCase().includes(q)):ALL_SERIES;
+  $('#series-out').innerHTML=list.map(s=>
+    '<div class="card" onclick="openSerie('+JSON.stringify(s.nm).replace(/"/g,'&quot;')+')">'+
+    '<b>'+esc(s.nm)+'</b><div class="sub">'+s.gs.length+' jeux · '+s.tv+' votes</div>'+
+    '<div class="mini" style="color:'+colorOf(s.score)+';font-size:19px;font-weight:700">'+s.score+'</div></div>').join('')
+    ||'<p class="muted">Aucune série ne correspond.</p>';
+}
+
 function biggestFan(nm){
   // Plus grand fan : parmi ceux qui ont noté au moins la moitié de la série (min 2 jeux)
   // et avec une moyenne d'au moins 6/10 dessus, la plus haute moyenne l'emporte,
@@ -1155,7 +1168,7 @@ async function genSeriesImage(){
    NAVIGATION + INIT
    ========================================================================== */
 /* ---- Permaliens : #/bilan, #/classement, #/jeu/<nom>, #/votant/<pseudo>, #/serie/<nom> ---- */
-const SLUGS={home:'bilan',rank:'classement',voters:'votants',best:'palmares',images:'images',data:'donnees'};
+const SLUGS={home:'bilan',rank:'classement',series:'series',voters:'votants',best:'palmares',images:'images',data:'donnees'};
 const PAGES={}; Object.keys(SLUGS).forEach(k=>PAGES[SLUGS[k]]=k);
 
 function showTab(slug){
@@ -1211,6 +1224,7 @@ document.querySelectorAll('[data-vsort]').forEach(b=>b.onclick=()=>{
 $('#f-name').addEventListener('input',renderRank);
 $('#f-voter').addEventListener('input',renderVoters);
 $('#f-serie').addEventListener('change',renderRank);
+(function(){ const el=$('#f-serie-name'); if(el) el.addEventListener('input',renderSeries); })();
 
 (function init(){
   const series=[...new Set(GAMES.map(g=>g.serie).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'fr'));
@@ -1219,7 +1233,7 @@ $('#f-serie').addEventListener('change',renderRank);
     document.title=DATA.meta.titre;
     $('#home-title').textContent=DATA.meta.titre;
   }
-  renderHome(); renderRank(); renderVoters(); renderBest(); imInit();
+  renderHome(); renderRank(); renderVoters(); renderBest(); renderSeries(); imInit();
   route(location.hash);
 })();
 </script>
