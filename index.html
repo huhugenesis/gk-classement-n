@@ -259,11 +259,11 @@ footer{border-top:1px solid var(--line);margin-top:50px;padding-top:18px;font-si
 <!-- ============ PALMARES ============ -->
 <section class="page" id="p-best">
   <h2 class="sec" style="margin-top:4px">Les jeux qui font l'unanimité</h2>
-  <p class="lead">Écart-type le plus faible : tout le monde tombe d'accord.</p>
+  <p class="lead">Écart-type inférieur à 1 : tout le monde tombe d'accord.</p>
   <div class="tiles" id="ex-cons"></div>
 
   <h2 class="sec">Les jeux qui divisent</h2>
-  <p class="lead">Écart-type le plus élevé : les notes partent dans tous les sens.</p>
+  <p class="lead">Écart-type supérieur à 2 : les notes partent dans tous les sens.</p>
   <div class="tiles" id="ex-cliv"></div>
 
   <h2 class="sec">Les pépites</h2>
@@ -271,7 +271,7 @@ footer{border-top:1px solid var(--line);margin-top:50px;padding-top:18px;font-si
   <div class="tiles" id="ex-pep"></div>
 
   <h2 class="sec">Les incompris</h2>
-  <p class="lead">Note globale basse, mais une minorité de fans convaincus.</p>
+  <p class="lead">Note globale basse, mais plus de 10 % des votants leur ont mis 9 ou 10. Le pourcentage indiqué est cette part de fans.</p>
   <div class="tiles" id="ex-inc"></div>
 
   <h2 class="sec">Les trophées des votants</h2>
@@ -642,7 +642,10 @@ function buildVoter(pseudo){
     '<h3>'+esc(pseudo)+'</h3>'+
     '<div class="kv">'+v.count+' jeux notés sur '+GAMES.length+' · '+Math.round(v.count/GAMES.length*100)+' % du catalogue</div>'+
     '<div class="pscore" style="color:'+colorOf(v.avg*10)+'">'+fr(v.avg*10)+' <small>/100 de moyenne</small></div>'+
-    '<div class="kv" style="color:'+(v.gap>0?'#22c55e':'#ef4444')+'">'+(v.gap>0?'+':'')+fr(v.gap)+' points d\'écart avec la communauté</div>'+
+    '<div class="kv">'+fr(v.gapAbs)+' points d\'écart moyen à la communauté '+
+    '<span style="color:var(--text3)">(distance moyenne, tous sens confondus)</span></div>'+
+    '<div class="kv" style="color:'+(v.gap>0?'#22c55e':'#ef4444')+'">tendance '+(v.gap>0?'+':'')+fr(v.gap)+' '+
+    '<span style="color:var(--text3)">(note plutôt '+(v.gap>0?'au-dessus':'en dessous')+' de la communauté)</span></div>'+
     '</div></div>';
 
   if(tr.length) html+='<div style="margin:14px 0 2px">'+tr.map(t=>'<span class="badge" style="background:var(--bg4);color:var(--text)">'+t.emoji+' '+esc(t.label)+'</span>').join('')+'</div>';
@@ -695,15 +698,20 @@ function tileHTML(g,tag){
 }
 let TROPHIES=[];
 function renderBest(){
+  const CAP=24;  // plafond souple : on ne dépasse jamais 24 vignettes par catégorie
   const elig=GAMES.filter(g=>g.votes>=20);
-  const cons=[...elig].sort((a,b)=>a.sd-b.sd).slice(0,10);
-  const cliv=[...elig].sort((a,b)=>b.sd-a.sd).slice(0,10);
-  const pep =GAMES.filter(g=>g.votes<=25&&g.score>=75).sort((a,b)=>b.avgExact-a.avgExact).slice(0,10);
-  const inc =GAMES.filter(g=>g.votes>=15&&g.score<=72&&g.fanPct>=.10).sort((a,b)=>b.fanPct-a.fanPct).slice(0,10);
+  // Unanimité : écart-type sous 1,0 (les notes se resserrent vraiment)
+  const cons=[...elig].filter(g=>g.sd<1.0).sort((a,b)=>a.sd-b.sd).slice(0,CAP);
+  // Clivants : écart-type au-dessus de 2,0 (division franche, pas juste « un peu plus large »)
+  const cliv=[...elig].filter(g=>g.sd>2.0).sort((a,b)=>b.sd-a.sd).slice(0,CAP);
+  // Pépites : peu de votes mais belle note — tout ce qui franchit le seuil, plafonné à 24
+  const pep =GAMES.filter(g=>g.votes<=25&&g.score>=75).sort((a,b)=>b.avgExact-a.avgExact).slice(0,CAP);
+  // Incompris : note basse mais une minorité de fans convaincus — idem
+  const inc =GAMES.filter(g=>g.votes>=15&&g.score<=72&&g.fanPct>=.10).sort((a,b)=>b.fanPct-a.fanPct).slice(0,CAP);
   $('#ex-cons').innerHTML=cons.map(g=>tileHTML(g,'σ'+fr(g.sd,2))).join('')||'<p class="muted">Pas assez de votes pour ce classement.</p>';
   $('#ex-cliv').innerHTML=cliv.map(g=>tileHTML(g,'σ'+fr(g.sd,2))).join('')||'<p class="muted">Pas assez de votes pour ce classement.</p>';
   $('#ex-pep').innerHTML =pep.map(g=>tileHTML(g,g.votes+'v')).join('')||'<p class="muted">Aucune pépite cette fois.</p>';
-  $('#ex-inc').innerHTML =inc.map(g=>tileHTML(g,Math.round(g.fanPct*100)+'%')).join('')||'<p class="muted">Aucun incompris cette fois.</p>';
+  $('#ex-inc').innerHTML =inc.map(g=>tileHTML(g,Math.round(g.fanPct*100)+'% de fans')).join('')||'<p class="muted">Aucun incompris cette fois.</p>';
 
   /* Trophées — seuil adaptatif : au moins la moitié de la médiane de participation,
      avec un plancher de 10 jeux, pour qu'un votant à 3 votes ne rafle pas un trophée. */
@@ -738,7 +746,7 @@ function renderBest(){
   award('📚','L\'école des fans','Le plus grand nombre de 10/10',(a,b)=>b.n10-a.n10,w=>w.n10+' fois la note maximale',true);
   award('😤','Le grincheux','Le plus grand nombre de 1/10',(a,b)=>b.n1-a.n1,w=>w.n1+' fois la note minimale',true);
   award('🦄','Le franc-tireur','L\'écart le plus fort avec la communauté',(a,b)=>b.gapAbs-a.gapAbs,w=>fr(w.gapAbs)+' points d\'écart moyen',true);
-  award('🎯','Le consensus','L\'écart le plus faible avec la communauté',(a,b)=>a.gapAbs-b.gapAbs,w=>fr(w.gapAbs)+' point d\'écart moyen',true);
+  award('🎯','Le consensuel','L\'écart le plus faible avec la communauté',(a,b)=>a.gapAbs-b.gapAbs,w=>fr(w.gapAbs)+' point d\'écart moyen',true);
   const tn=$('#troph-note'); if(tn) tn.textContent='Attribués parmi les votants ayant noté au moins '+TROPHY_MIN+' jeux.';
   $('#troph-out').innerHTML=TROPHIES.map(t=>{
     const ws=t.winners||[];
