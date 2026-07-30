@@ -485,17 +485,17 @@ const VOTERS = Object.keys(DATA.votes).map(p=>{
   const v = (entry && entry.v) ? entry.v : entry;
   const avatar = (entry && entry.av) ? entry.av : null;
   const names = Object.keys(v);
-  let sum=0, n10=0, n1=0, dSum=0, dAbs=0, dN=0;
+  let sum=0, n10=0, n9=0, n1=0, dSum=0, dAbs=0, dN=0;
   names.forEach(nm=>{
     const note=v[nm]; sum+=note;
-    if(note===10)n10++; if(note===1)n1++;
+    if(note===10)n10++; if(note===9)n9++; if(note===1)n1++;
     const g=BYNAME[nm];
     if(g&&g.votes){ const d=note*10-g.exact; dSum+=d; dAbs+=Math.abs(d); dN++; }
   });
   return {
     pseudo:p, votes:v, avatar:avatar, count:names.length,
     avg: names.length ? sum/names.length : 0,
-    n10, n1,
+    n10, n9, n1,
     gap: dN ? dSum/dN : 0,      // écart SIGNÉ moyen (pour les encarts au-dessus / en dessous)
     gapAbs: dN ? dAbs/dN : 0    // écart ABSOLU moyen (pour consensus / franc-tireur)
   };
@@ -848,7 +848,14 @@ function renderBest(){
   award('⚖️','Le critique','La moyenne la plus basse',(a,b)=>a.avg-b.avg,w=>fr(w.avg*10)+' de moyenne',true);
   award('🎮','Le marathonien','Le plus grand nombre de jeux notés',(a,b)=>b.count-a.count,w=>w.count+' jeux notés',false);
   award('📚','L\'école des fans','Le plus grand nombre de 10/10',(a,b)=>b.n10-a.n10,w=>w.n10+' fois la note maximale',true);
-  award('😤','Le grincheux','Le plus grand nombre de 1/10',(a,b)=>b.n1-a.n1,w=>w.n1+' fois la note minimale',true);
+  award('😤','Le grincheux (en nombre)','Le plus grand nombre de 1/10',(a,b)=>b.n1-a.n1,w=>w.n1+' fois la note minimale',true);
+  // Proportions (le seuil de votes évite les votants à très peu de notes)
+  const pct=x=>Math.round(x*1000)/10;
+  award('🤩','L\'enthousiaste','La plus forte proportion de 9 et 10',(a,b)=>((b.n9+b.n10)/b.count)-((a.n9+a.n10)/a.count),w=>pct((w.n9+w.n10)/w.count)+' % de 9-10 ('+(w.n9+w.n10)+'/'+w.count+')',true);
+  award('🧊','Le grincheux (en proportion)','La plus forte proportion de 1/10',(a,b)=>(b.n1/b.count)-(a.n1/a.count),w=>pct(w.n1/w.count)+' % de 1/10 ('+w.n1+'/'+w.count+')',true);
+  // L'ambivalent : autant d'amours que de rejets -> on prend le PLUS PETIT des deux taux (exige les deux)
+  const ambi=x=>Math.min(x.n10/x.count, x.n1/x.count);
+  award('🎭','L\'ambivalent','Autant de 10/10 que de 1/10 (les deux extrêmes à la fois)',(a,b)=>ambi(b)-ambi(a),w=>'≥ '+pct(ambi(w))+' % dans chaque extrême ('+w.n10+'×10 · '+w.n1+'×1)',true);
   award('🦄','Le franc-tireur','L\'écart le plus fort avec la communauté',(a,b)=>b.gapAbs-a.gapAbs,w=>fr(w.gapAbs)+' points d\'écart moyen',true);
   award('🎯','Le consensuel','L\'écart le plus faible avec la communauté',(a,b)=>a.gapAbs-b.gapAbs,w=>fr(w.gapAbs)+' point d\'écart moyen',true);
   const tn=$('#troph-note'); if(tn) tn.textContent='Attribués parmi les votants ayant noté au moins '+TROPHY_MIN+' jeux.';
