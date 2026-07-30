@@ -202,6 +202,24 @@ footer{border-top:1px solid var(--line);margin-top:50px;padding-top:18px;font-si
 .pname{font-weight:600}
 .pmeta{font-size:12px;color:var(--text3)}
 .ptag{display:inline-block;font-size:10.5px;background:rgba(251,146,60,.16);color:var(--t80);border-radius:20px;padding:1px 7px;margin-left:6px;vertical-align:middle}
+
+/* Mobile : barre d'onglets en défilement horizontal plutôt qu'empilée */
+@media (max-width:640px){
+  nav.tabs{
+    flex-wrap:nowrap;              /* une seule ligne */
+    overflow-x:auto;              /* défilement latéral */
+    -webkit-overflow-scrolling:touch;
+    scrollbar-width:none;         /* masquer la barre de défilement (Firefox) */
+    gap:1px;
+  }
+  nav.tabs::-webkit-scrollbar{ display:none; }  /* masquer (Chrome/Safari) */
+  nav.tabs .tab{
+    flex:0 0 auto;                /* chaque onglet garde sa largeur, pas de compression */
+    white-space:nowrap;
+    font-size:13px;
+    padding:7px 10px;
+  }
+}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -1405,7 +1423,7 @@ $('#f-serie').addEventListener('change',renderRank);
 })();
 
 /* ===================== MODULE PROPOSITIONS ===================== */
-const PROP_RECENT_MONTHS=6;
+const PROP_RECENT_MONTHS=3;
 const PROP_VOTED_KEY='gk_prop_voted';
 
 function propNorm(s){ return (s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,' ').trim(); }
@@ -1531,7 +1549,7 @@ function propRender(){
     const soon=propTooRecent(p.date);
     return '<div class="pprop">'+
       '<div class="pvote"><button class="'+(p.mine?'voted':'')+'" onclick="propToggle('+p.id+')" title="'+(p.mine?'Retirer mon vote':'Je veux voir ce sondage')+'">'+(p.mine?'✓':'▲')+'</button><span class="n">'+p.votes+'</span></div>'+
-      '<div style="flex:1;min-width:0"><div class="pname">'+esc(p.name)+(soon?'<span class="ptag">trop récent</span>':'')+'</div><div class="pmeta">Sortie : '+propFmtDate(p.date)+'</div></div>'+
+      '<div style="flex:1;min-width:0"><div class="pname">'+esc(p.name)+(soon?'<span class="ptag">trop récent : sorti il y a moins de '+PROP_RECENT_MONTHS+' mois</span>':'')+'</div><div class="pmeta">Sortie : '+propFmtDate(p.date)+'</div></div>'+
     '</div>';
   }).join('') || '<p class="muted">Aucune proposition pour l\'instant. Soyez le premier !</p>';
 }
