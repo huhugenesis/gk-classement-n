@@ -358,7 +358,7 @@ footer{border-top:1px solid var(--line);margin-top:50px;padding-top:18px;font-si
 <!-- ============ PROPOSITIONS ============ -->
 <section class="page" id="p-propose">
   <h2 class="sec" style="margin-top:4px">Proposez les prochains sondages</h2>
-  <p class="lead">Le classement entre dans une nouvelle phase : des sondages plus espacés, choisis avec vous. Proposez un jeu qui manque encore, et votez pour ceux que vous voulez voir passer.</p>
+  <p class="lead">Le classement entre dans une nouvelle phase : des sondages plus espacés, choisis avec vous. Proposez un jeu qui manque encore, et cliquez sur la flèche ▲ à côté d’un jeu pour voter : les plus demandés passeront en sondage. Recliquez pour retirer votre vote.</p>
 
   <div id="prop-config-warn" class="card" style="border-color:var(--t80);display:none">
     <p style="margin:0;color:var(--text2)">Le module de propositions n'est pas encore activé sur cette archive.</p>
@@ -1497,12 +1497,15 @@ async function propInsert(nm,dt,msg){
   propClear(); await propLoad();
 }
 async function propAddVote(p){
-  const { data, error } = await propDb.from('propositions').update({ votes:(p.votes||0)+1 }).eq('id',p.id).select().single();
-  if(error)return; const mv=propMyVotes(); mv.add(String(p.id)); propSaveVotes(mv); await propLoad();
+  // incrément atomique côté base (évite d'écraser un compteur mis à jour entre-temps)
+  const { error } = await propDb.rpc('vote_prop', { prop_id:p.id, delta:1 });
+  if(error){ console.error(error); return; }
+  const mv=propMyVotes(); mv.add(String(p.id)); propSaveVotes(mv); await propLoad();
 }
 async function propRemoveVote(p){
-  const { error } = await propDb.from('propositions').update({ votes:Math.max(0,(p.votes||0)-1) }).eq('id',p.id);
-  if(error)return; const mv=propMyVotes(); mv.delete(String(p.id)); propSaveVotes(mv); await propLoad();
+  const { error } = await propDb.rpc('vote_prop', { prop_id:p.id, delta:-1 });
+  if(error){ console.error(error); return; }
+  const mv=propMyVotes(); mv.delete(String(p.id)); propSaveVotes(mv); await propLoad();
 }
 async function propToggle(id){ const p=PROPS.find(x=>x.id===id); if(!p)return; if(p.mine)await propRemoveVote(p); else await propAddVote(p); }
 async function propConfirmVote(){
