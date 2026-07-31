@@ -75,6 +75,8 @@ h2.sec:after{content:"";flex:1;height:1px;background:var(--line)}
 .podium{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-top:12px}
 .pod{position:relative;border-radius:12px;overflow:hidden;background:var(--bg3);cursor:pointer;border:1px solid var(--line)}
 .pod .thumb{aspect-ratio:1;width:100%;object-fit:cover;display:block}
+.thumb-sm{width:56px;height:56px;object-fit:cover;border-radius:8px;display:block}
+.ph-sm{width:56px;height:56px;display:flex;align-items:center;justify-content:center;background:var(--bg4);border-radius:8px;font-size:22px}
 .pod .ph{aspect-ratio:1;display:flex;align-items:center;justify-content:center;font-size:36px;color:var(--bg4)}
 .pod .grad{position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,.88) 12%,rgba(0,0,0,0) 62%)}
 .pod .sc{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
@@ -315,6 +317,10 @@ footer{border-top:1px solid var(--line);margin-top:50px;padding-top:18px;font-si
   <h2 class="sec">Les incompris</h2>
   <p class="lead">Note globale basse, mais plus de 10 % des votants leur ont mis 9 ou 10. Le pourcentage indiqué est cette part de fans.</p>
   <div class="tiles" id="ex-inc"></div>
+
+  <h2 class="sec">Les bêtes noires</h2>
+  <p class="lead">Des jeux plutôt bien notés (70+) qui ont pourtant décroché un 1/10 de la part de votants qui n'en donnent presque jamais. Un rejet rare sur un jeu apprécié : d'autant plus marquant. Classés par note décroissante.</p>
+  <div id="ex-hate"></div>
 
   <h2 class="sec">Les trophées des votants</h2>
   <p class="lead" id="troph-note"></p>
@@ -829,6 +835,36 @@ function renderBest(){
   $('#ex-cliv').innerHTML=cliv.map(g=>tileHTML(g,'σ'+fr(g.sd,2))).join('')||'<p class="muted">Pas assez de votes pour ce classement.</p>';
   $('#ex-pep').innerHTML =pep.map(g=>tileHTML(g,g.votes+'v')).join('')||'<p class="muted">Aucune pépite cette fois.</p>';
   $('#ex-inc').innerHTML =inc.map(g=>tileHTML(g,Math.round(g.fanPct*100)+'% de fans')).join('')||'<p class="muted">Aucun incompris cette fois.</p>';
+
+  /* Bêtes noires : 1/10 rares (votants qui en mettent au plus 2, sur au moins 20 jeux notés) */
+  const HATE_PCT=0.02;   // « clément » : ses 1/10 pèsent au plus 2 % de ses votes (implique >= 50 votes)
+  const hateByGame={};
+  VOTERS.forEach(v=>{
+    const names=Object.keys(v.votes).filter(nm=>BYNAME[nm]);   // seulement les jeux existants (pas de votes fantômes)
+    if(names.length<50) return;                                // au moins 50 votes valides
+    const ones=names.filter(nm=>v.votes[nm]===1);
+    if(ones.length===0) return;
+    if(ones.length/names.length > HATE_PCT) return;
+    ones.forEach(nm=>{ (hateByGame[nm]=hateByGame[nm]||[]).push({u:v.pseudo,total1:ones.length,tot:names.length}); });
+  });
+  const HATE_MINSCORE=70;
+  const hateGames=Object.entries(hateByGame)
+    .map(([nm,list])=>({g:BYNAME[nm],list,count:list.length}))
+    .filter(x=>x.g && x.g.score>=HATE_MINSCORE)
+    .sort((a,b)=>b.g.score-a.g.score || b.count-a.count);
+  $('#ex-hate').innerHTML = hateGames.length ? hateGames.map(x=>{
+    const noms=x.list.map(o=>'<span class="troph-win" data-w="'+esc(o.u)+'" title="'+o.total1+' × 1/10 sur '+o.tot+' votes">'+esc(o.u)+'</span>').join(', ');
+    return '<div class="hate-row" style="display:flex;gap:12px;align-items:center;padding:9px 0;border-bottom:1px solid var(--line)">'+
+      '<div style="flex:0 0 auto;cursor:pointer" onclick="openGame('+JSON.stringify(x.g.name).replace(/"/g,'&quot;')+')">'+thumb(x.g,'thumb-sm')+'</div>'+
+      '<div style="flex:1;min-width:0">'+
+        '<div style="font-weight:600;cursor:pointer" onclick="openGame('+JSON.stringify(x.g.name).replace(/"/g,'&quot;')+')">'+esc(x.g.name)+'</div>'+
+        '<div class="mini" style="color:var(--text3)">bête noire de '+x.count+' votant'+(x.count>1?'s':'')+' clément'+(x.count>1?'s':'')+' : '+noms+'</div>'+
+      '</div>'+
+      '<div style="flex:0 0 auto;color:'+colorOf(x.g.score)+';font-weight:700;font-family:var(--mono)">'+x.g.score+'</div>'+
+    '</div>';
+  }).join('') : '<p class="muted">Aucune bête noire identifiée.</p>';
+  // clic sur les pseudos -> fiche votant
+  $('#ex-hate').querySelectorAll('.troph-win').forEach(el=>el.onclick=(ev)=>{ ev.stopPropagation(); openVoter(el.dataset.w); });
 
   /* Trophées — seuil adaptatif : au moins la moitié de la médiane de participation,
      avec un plancher de 10 jeux, pour qu'un votant à 3 votes ne rafle pas un trophée. */
